@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Manim Teach</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 17.5V6.75A2.75 2.75 0 0 1 6.75 4h10.5A2.75 2.75 0 0 1 20 6.75v10.5A2.75 2.75 0 0 1 17.25 20H6.5L4 17.5Z"/><path d="M8 9h8M8 12h5M8 15h7"/></svg>
+          </div>
+          <div>
+            <strong>Manim Teach</strong>
+            <span>图片题目讲解视频工作台</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span id="healthBadge" class="status-badge">连接中</span>
+          <button id="refreshBtn" class="icon-button" type="button" title="刷新状态" aria-label="刷新状态">
+            <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="conversation-panel" aria-label="生成对话">
+          <div id="messageList" class="message-list">
+            <article class="message assistant">
+              <div class="avatar">MT</div>
+              <div class="message-body">
+                <p>上传题目图片，必要时补充题面文本，然后开始生成讲解视频。</p>
+              </div>
+            </article>
+          </div>
+
+          <form id="composer" class="composer">
+            <input id="imageInput" type="file" name="image" accept="image/*" hidden />
+            <div id="dropZone" class="drop-zone" tabindex="0">
+              <div class="drop-copy">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M20 16.5v1.75A1.75 1.75 0 0 1 18.25 20H5.75A1.75 1.75 0 0 1 4 18.25V16.5"/></svg>
+                <span>拖拽图片到这里</span>
+              </div>
+              <button id="pickImageBtn" type="button" class="text-button">选择图片</button>
+            </div>
+            <div id="filePreview" class="file-preview hidden"></div>
+            <textarea id="problemText" rows="4" placeholder="可选：粘贴题面文本或补充要求。使用 DeepSeek 文本接口时建议填写。"></textarea>
+            <div class="composer-footer">
+              <div class="settings-row">
+                <label>
+                  输入
+                  <select id="inputMode">
+                    <option value="auto">auto</option>
+                    <option value="image">image</option>
+                    <option value="text">text</option>
+                  </select>
+                </label>
+                <label>
+                  质量
+                  <select id="quality">
+                    <option value="l">低清</option>
+                    <option value="m" selected>中等</option>
+                    <option value="h">高清</option>
+                    <option value="k">4K</option>
+                  </select>
+                </label>
+                <label class="check-label">
+                  <input id="noRender" type="checkbox" />
+                  只生成文件
+                </label>
+              </div>
+              <button id="submitBtn" type="submit" class="primary-button">
+                <span>开始生成</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="output-panel" aria-label="输出视频与任务状态">
+          <section class="status-block">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">JOB</span>
+                <h2 id="jobTitle">等待任务</h2>
+              </div>
+              <button id="cancelBtn" class="ghost-button hidden" type="button">取消</button>
+            </div>
+            <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+            <p id="stageText" class="muted">上传图片后会在这里显示生成进度。</p>
+          </section>
+
+          <section class="video-block">
+            <div class="video-frame empty" id="videoFrame">
+              <video id="videoPlayer" controls playsinline></video>
+              <div id="videoEmpty" class="video-empty">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5v13A2.5 2.5 0 0 1 16.5 21h-9A2.5 2.5 0 0 1 5 18.5v-13Z"/><path d="m10 8 5 4-5 4V8Z"/></svg>
+                <span>视频生成后显示</span>
+              </div>
+            </div>
+            <div class="video-actions">
+              <button id="cinemaBtn" class="secondary-button" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+                影院模式
+              </button>
+              <a id="downloadLink" class="secondary-button disabled" href="#" download>下载视频</a>
+            </div>
+          </section>
+
+          <section class="artifact-block">
+            <div class="section-heading compact">
+              <div>
+                <span class="eyebrow">ARTIFACTS</span>
+                <h2>生成文件</h2>
+              </div>
+            </div>
+            <div id="artifactTabs" class="artifact-tabs"></div>
+            <pre id="artifactView" class="artifact-view">暂无生成文件。</pre>
+          </section>
+
+          <section class="log-block">
+            <details>
+              <summary>运行日志</summary>
+              <pre id="logView" class="log-view">暂无日志。</pre>
+            </details>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <section id="cinemaOverlay" class="cinema-overlay" aria-label="视频问答">
+      <div class="cinema-stage">
+        <div class="cinema-video-wrap">
+          <video id="cinemaVideo" controls playsinline></video>
+        </div>
+        <aside class="cinema-chat">
+          <div class="cinema-chat-header">
+            <div>
+              <span class="eyebrow">ASK</span>
+              <h2>边看边问</h2>
+            </div>
+            <button id="closeCinemaBtn" class="icon-button inverse" type="button" title="退出影院模式" aria-label="退出影院模式">
+              <svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+          <div id="watchMessages" class="watch-messages">
+            <article class="watch-message assistant">播放时可以在这里提问，发送问题会先暂停视频。</article>
+          </div>
+          <form id="watchForm" class="watch-form">
+            <textarea id="watchInput" rows="3" placeholder="问一个关于当前讲解的问题"></textarea>
+            <button class="primary-button" type="submit">
+              <span>发送</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-6-7-1Z"/><path d="m12 13 7-8"/></svg>
+            </button>
+          </form>
+        </aside>
+      </div>
+    </section>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

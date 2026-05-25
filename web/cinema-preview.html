@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Manim Teach · 影院模式预览</title>
+    <style>
+      :root {
+        --bg: #060808;
+        --panel: #101616;
+        --panel-2: #162020;
+        --line: rgba(255, 255, 255, 0.12);
+        --text: #eff7f5;
+        --muted: #8fa29e;
+        --accent: #0f766e;
+        --accent-soft: #1d9b8f;
+        --formula: #f6c453;
+        --blue: #6aa6ff;
+        --pink: #ff7aa2;
+        --radius: 8px;
+        --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        letter-spacing: 0;
+      }
+
+      button,
+      textarea {
+        font: inherit;
+      }
+
+      svg {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .stage {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 390px;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      .video-side {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 28% 16%, rgba(15, 118, 110, 0.22), transparent 32%),
+          linear-gradient(180deg, #090d0e 0%, #030505 100%);
+      }
+
+      .video-canvas {
+        position: relative;
+        width: min(100%, calc((100vh - 48px) * 16 / 9));
+        aspect-ratio: 16 / 9;
+        overflow: hidden;
+        background: #111517;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+      }
+
+      .manim-scene {
+        position: absolute;
+        inset: 0;
+        padding: 5.2% 6%;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          #111517;
+        background-size: 42px 42px;
+      }
+
+      .scene-title {
+        position: absolute;
+        top: 6%;
+        left: 6%;
+        color: #eef6f4;
+        font-size: clamp(18px, 1.7vw, 30px);
+        font-weight: 760;
+      }
+
+      .scene-subtitle {
+        position: absolute;
+        top: 12%;
+        left: 6%;
+        color: var(--muted);
+        font-size: clamp(12px, 1vw, 16px);
+      }
+
+      .problem-card {
+        position: absolute;
+        top: 19%;
+        left: 6%;
+        width: 32%;
+        min-height: 40%;
+        padding: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.055);
+      }
+
+      .problem-card strong {
+        display: block;
+        margin-bottom: 12px;
+        color: #d9e7e4;
+        font-size: 14px;
+      }
+
+      .problem-line {
+        height: 9px;
+        margin: 12px 0;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.18);
+      }
+
+      .problem-line.short {
+        width: 64%;
+      }
+
+      .problem-line.mid {
+        width: 82%;
+      }
+
+      .formula-stack {
+        position: absolute;
+        top: 25%;
+        right: 7%;
+        width: 44%;
+      }
+
+      .formula {
+        margin-bottom: 18px;
+        padding: 16px 18px;
+        border-left: 3px solid var(--accent-soft);
+        background: rgba(15, 118, 110, 0.12);
+        color: #f5fbfa;
+        font-family: "Times New Roman", serif;
+        font-size: clamp(22px, 2.8vw, 46px);
+      }
+
+      .formula .hot {
+        color: var(--formula);
+      }
+
+      .formula .blue {
+        color: var(--blue);
+      }
+
+      .explain {
+        color: #cfe0dc;
+        font-size: clamp(13px, 1.1vw, 18px);
+        line-height: 1.65;
+      }
+
+      .diagram {
+        position: absolute;
+        left: 18%;
+        bottom: 12%;
+        width: 30%;
+        aspect-ratio: 1.4;
+      }
+
+      .caption {
+        position: absolute;
+        left: 6%;
+        right: 6%;
+        bottom: 5.5%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        color: #d8e6e3;
+        font-size: 14px;
+      }
+
+      .progress {
+        flex: 1;
+        height: 5px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.14);
+      }
+
+      .progress span {
+        display: block;
+        width: 42%;
+        height: 100%;
+        background: var(--accent-soft);
+      }
+
+      .paused-pill {
+        position: absolute;
+        top: 18px;
+        left: 18px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.38);
+        color: #eaf4f2;
+        font-size: 13px;
+      }
+
+      .fullscreen-button {
+        position: absolute;
+        right: 18px;
+        bottom: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 38px;
+        padding: 0 14px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: var(--radius);
+        color: #eef7f5;
+        background: rgba(255, 255, 255, 0.08);
+        cursor: pointer;
+      }
+
+      .chat-side {
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        border-left: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+
+      h1 {
+        margin: 0;
+        color: #fff;
+        font-size: 20px;
+        line-height: 1.15;
+      }
+
+      .close-button {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        color: #edf7f4;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .messages {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 16px;
+      }
+
+      .message {
+        margin-bottom: 12px;
+        padding: 11px 12px;
+        border-radius: var(--radius);
+        font-size: 13px;
+        line-height: 1.58;
+      }
+
+      .message.assistant {
+        background: rgba(255, 255, 255, 0.08);
+        color: #e3efec;
+      }
+
+      .message.user {
+        margin-left: 26px;
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .time-chip {
+        display: inline-flex;
+        min-height: 24px;
+        align-items: center;
+        padding: 0 8px;
+        margin-bottom: 8px;
+        border-radius: 999px;
+        background: rgba(246, 196, 83, 0.15);
+        color: var(--formula);
+        font-size: 12px;
+      }
+
+      .ask-form {
+        padding: 14px;
+        border-top: 1px solid var(--line);
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 96px;
+        resize: none;
+        padding: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: var(--radius);
+        outline: none;
+        color: #eef7f5;
+        background: rgba(255, 255, 255, 0.06);
+        line-height: 1.5;
+      }
+
+      .send-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 10px;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .send-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 38px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: var(--radius);
+        color: #fff;
+        background: var(--accent);
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      @media (max-width: 980px) {
+        body {
+          overflow: auto;
+        }
+
+        .stage {
+          height: auto;
+          min-height: 100vh;
+          grid-template-columns: 1fr;
+          grid-template-rows: minmax(0, 58vh) minmax(360px, 42vh);
+        }
+
+        .chat-side {
+          border-left: 0;
+          border-top: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="previewStage" class="stage">
+      <section class="video-side" aria-label="全屏视频区域">
+        <div class="video-canvas">
+          <div class="paused-pill">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14"/><path d="M16 5v14"/></svg>
+            已暂停 · 02:14
+          </div>
+          <div class="manim-scene">
+            <div class="scene-title">三角恒等变形：从题目到关键公式</div>
+            <div class="scene-subtitle">Scene 3 / 6 · 关键关系高亮</div>
+            <div class="problem-card">
+              <strong>题目条件</strong>
+              <div class="problem-line mid"></div>
+              <div class="problem-line"></div>
+              <div class="problem-line short"></div>
+              <div class="problem-line mid"></div>
+            </div>
+            <svg class="diagram" viewBox="0 0 320 220" aria-hidden="true">
+              <path d="M35 175 H280 L105 40 Z" fill="rgba(106, 166, 255, 0.08)" stroke="#6aa6ff" stroke-width="4"/>
+              <path d="M105 40 L105 175" stroke="#f6c453" stroke-width="4" stroke-dasharray="8 8"/>
+              <circle cx="105" cy="40" r="6" fill="#f6c453"/>
+              <circle cx="35" cy="175" r="5" fill="#ff7aa2"/>
+              <circle cx="280" cy="175" r="5" fill="#0fdbc8"/>
+              <text x="88" y="28" fill="#f6c453" font-size="22">A</text>
+              <text x="18" y="202" fill="#ff7aa2" font-size="22">B</text>
+              <text x="284" y="202" fill="#0fdbc8" font-size="22">C</text>
+            </svg>
+            <div class="formula-stack">
+              <div class="formula">sin²<span class="blue">θ</span> + cos²<span class="blue">θ</span> = <span class="hot">1</span></div>
+              <div class="explain">把图中的直角关系转成单位圆上的投影长度，就能把原题化成一个只含 θ 的方程。</div>
+            </div>
+            <div class="caption">
+              <span>讲解：先固定角 θ，再观察水平和竖直方向的两个投影。</span>
+              <div class="progress"><span></span></div>
+              <span>02:14 / 05:02</span>
+            </div>
+          </div>
+        </div>
+        <button id="fullscreenButton" class="fullscreen-button" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+          浏览器全屏
+        </button>
+      </section>
+
+      <aside class="chat-side" aria-label="全屏问答区域">
+        <header class="chat-header">
+          <div>
+            <span class="eyebrow">ASK WHILE WATCHING</span>
+            <h1>边看边问</h1>
+          </div>
+          <button class="close-button" type="button" title="退出预览">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </header>
+        <div class="messages">
+          <article class="message assistant">播放时可以在这里提问。发送问题会先暂停视频，并把当前时间点一起传给后端。</article>
+          <article class="message user">
+            <span class="time-chip">02:14</span><br />
+            这里为什么可以把这个长度写成 cos θ？
+          </article>
+          <article class="message assistant">视频已暂停在 02:14。因为当前看的是单位圆或直角三角形中的水平投影：斜边长度归一化为 1 时，邻边长度正好对应 cos θ。</article>
+        </div>
+        <form class="ask-form">
+          <textarea>继续问：如果不是单位圆，这一步要怎么改？</textarea>
+          <div class="send-row">
+            <span class="hint">Enter 换行，发送时自动暂停视频</span>
+            <button class="send-button" type="button">
+              发送
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-6-7-1Z"/><path d="m12 13 7-8"/></svg>
+            </button>
+          </div>
+        </form>
+      </aside>
+    </main>
+    <script>
+      document.getElementById("fullscreenButton").addEventListener("click", () => {
+        const stage = document.getElementById("previewStage");
+        const request = stage.requestFullscreen || stage.webkitRequestFullscreen;
+        if (!request) return;
+        const result = request.call(stage);
+        if (result && typeof result.catch === "function") result.catch(() => {});
+      });
+    </script>
+  </body>
+</html>
