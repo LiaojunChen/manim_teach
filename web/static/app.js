@@ -19,6 +19,13 @@ const elements = {
   pickImageBtn: $("pickImageBtn"),
   filePreview: $("filePreview"),
   problemText: $("problemText"),
+  visionModel: $("visionModel"),
+  codeModel: $("codeModel"),
+  visionBaseUrl: $("visionBaseUrl"),
+  codeBaseUrl: $("codeBaseUrl"),
+  visionApiKeyEnv: $("visionApiKeyEnv"),
+  codeApiKeyEnv: $("codeApiKeyEnv"),
+  preferVisionOverText: $("preferVisionOverText"),
   inputMode: $("inputMode"),
   quality: $("quality"),
   noRender: $("noRender"),
@@ -232,6 +239,13 @@ async function submitJob(event) {
   form.append("quality", elements.quality.value);
   form.append("jsonMode", "json_object");
   form.append("noRender", elements.noRender.checked ? "true" : "false");
+  form.append("preferVisionOverText", elements.preferVisionOverText.checked ? "true" : "false");
+  if (elements.visionModel.value.trim()) form.append("visionModel", elements.visionModel.value.trim());
+  if (elements.codeModel.value.trim()) form.append("model", elements.codeModel.value.trim());
+  if (elements.visionBaseUrl.value.trim()) form.append("visionBaseUrl", elements.visionBaseUrl.value.trim());
+  if (elements.codeBaseUrl.value.trim()) form.append("baseUrl", elements.codeBaseUrl.value.trim());
+  if (elements.visionApiKeyEnv.value.trim()) form.append("visionApiKeyEnv", elements.visionApiKeyEnv.value.trim());
+  if (elements.codeApiKeyEnv.value.trim()) form.append("apiKeyEnv", elements.codeApiKeyEnv.value.trim());
 
   const summary = elements.problemText.value.trim()
     ? "已提交图片和补充题面，开始生成视频。"

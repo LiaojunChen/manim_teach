@@ -47,7 +47,40 @@
               <button id="pickImageBtn" type="button" class="text-button">选择图片</button>
             </div>
             <div id="filePreview" class="file-preview hidden"></div>
-            <textarea id="problemText" rows="4" placeholder="可选：粘贴题面文本或补充要求。使用 DeepSeek 文本接口时建议填写。"></textarea>
+            <textarea id="problemText" rows="4" placeholder="可选：粘贴题面文本或补充要求。默认优先读图，也会把这里的内容作为补充上下文。"></textarea>
+            <details class="advanced-settings">
+              <summary>后端设置</summary>
+              <div class="advanced-grid">
+                <label>
+                  转写/解题模型
+                  <input id="visionModel" type="text" placeholder="默认读取 .env / gpt-5.5" />
+                </label>
+                <label>
+                  Manim 代码模型
+                  <input id="codeModel" type="text" placeholder="默认读取 .env / deepseek-v4-pro" />
+                </label>
+                <label>
+                  转写 API Base
+                  <input id="visionBaseUrl" type="text" placeholder="默认读取 .env" />
+                </label>
+                <label>
+                  代码 API Base
+                  <input id="codeBaseUrl" type="text" placeholder="默认读取 .env" />
+                </label>
+                <label>
+                  转写 Key 环境变量
+                  <input id="visionApiKeyEnv" type="text" placeholder="默认读取 .env" />
+                </label>
+                <label>
+                  代码 Key 环境变量
+                  <input id="codeApiKeyEnv" type="text" placeholder="默认读取 .env" />
+                </label>
+              </div>
+              <label class="check-label advanced-check">
+                <input id="preferVisionOverText" type="checkbox" checked />
+                有题面文本时仍优先调用图片转写
+              </label>
+            </details>
             <div class="composer-footer">
               <div class="settings-row">
                 <label>

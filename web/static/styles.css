@@ -297,6 +297,52 @@ svg {
   padding: 8px 2px;
 }
 
+.advanced-settings {
+  margin-top: 2px;
+  padding: 9px 0 10px;
+  border-top: 1px solid var(--line);
+}
+
+.advanced-settings summary {
+  cursor: pointer;
+  color: #25313b;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.advanced-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.advanced-grid input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: #fff;
+}
+
+.advanced-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .composer-footer {
   justify-content: space-between;
   gap: 12px;
@@ -706,6 +752,10 @@ details summary {
 
   .settings-row {
     gap: 8px;
+  }
+
+  .advanced-grid {
+    grid-template-columns: 1fr;
   }
 
   .output-panel {

@@ -33,6 +33,22 @@ WEB_ROOT = ROOT / "web"
 SCRIPT_PATH = ROOT / "solve_image_to_video.py"
 RUNS_ROOT = ROOT / "runs" / "web_jobs"
 ARTIFACT_NAMES = {
+    "transcript_prompt.md",
+    "transcript_generation.json",
+    "transcript_model_response.json",
+    "transcript_raw_model_output.txt",
+    "transcript_api_error.txt",
+    "solution_prompt.md",
+    "code_prompt_preview.md",
+    "solution_generation.json",
+    "solution_model_response.json",
+    "solution_raw_model_output.txt",
+    "solution_api_error.txt",
+    "code_prompt.md",
+    "code_generation.json",
+    "code_model_response.json",
+    "code_raw_model_output.txt",
+    "code_api_error.txt",
     "prompt.md",
     "run_config.json",
     "problem_transcript.md",
@@ -46,6 +62,11 @@ ARTIFACT_NAMES = {
     "render.log",
     "api_error.txt",
 }
+ARTIFACT_PATTERNS = [
+    re.compile(r"repair_\d+_(?:response|invalid)\.json$"),
+    re.compile(r"repair_\d+_(?:summary|api_error|raw_output)\.(?:md|txt)$"),
+    re.compile(r"render_repair_\d+\.log$"),
+]
 
 
 JOBS: Dict[str, Dict[str, Any]] = {}
@@ -114,6 +135,20 @@ def newest_mp4(out_dir: Path) -> Optional[Path]:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
+def is_allowed_artifact(name: str) -> bool:
+    return name in ARTIFACT_NAMES or any(pattern.fullmatch(name) for pattern in ARTIFACT_PATTERNS)
+
+
+def list_artifacts(out_dir: Path) -> list[str]:
+    if not out_dir.exists():
+        return []
+    artifacts = []
+    for path in out_dir.iterdir():
+        if path.is_file() and is_allowed_artifact(path.name):
+            artifacts.append(path.name)
+    return sorted(artifacts)
+
+
 def job_snapshot(job_id: str) -> Dict[str, Any]:
     with JOBS_LOCK:
         job = dict(JOBS.get(job_id) or {})
@@ -123,7 +158,7 @@ def job_snapshot(job_id: str) -> Dict[str, Any]:
     out_dir = Path(job["out_dir"])
     return_code = job.get("return_code")
     video_path = newest_mp4(out_dir)
-    artifacts = sorted(name for name in ARTIFACT_NAMES if (out_dir / name).exists())
+    artifacts = list_artifacts(out_dir)
 
     status = job.get("status", "queued")
     if return_code == 0:
@@ -135,10 +170,16 @@ def job_snapshot(job_id: str) -> Dict[str, Any]:
     stage = "等待启动"
     if (out_dir / "prompt.md").exists():
         progress, stage = 18, "已创建提示词"
-    if (out_dir / "problem_transcript.md").exists() or (out_dir / "generation.json").exists():
-        progress, stage = 48, "已生成解题内容"
+    if (out_dir / "transcript_generation.json").exists() or (out_dir / "problem_transcript.md").exists():
+        progress, stage = 35, "已完成题面转写"
+    if (out_dir / "solution_generation.json").exists():
+        progress, stage = 52, "已完成解题与分镜"
+    if (out_dir / "code_prompt.md").exists():
+        progress, stage = 60, "正在生成 Manim 代码"
+    if (out_dir / "code_generation.json").exists():
+        progress, stage = 68, "已生成 Manim 代码"
     if (out_dir / "video_scene.py").exists():
-        progress, stage = 66, "已生成 Manim 场景"
+        progress, stage = 72, "已写出 Manim 场景"
     if (out_dir / "render.log").exists():
         progress, stage = 82, "正在渲染或修复"
     if video_path:
@@ -146,9 +187,6 @@ def job_snapshot(job_id: str) -> Dict[str, Any]:
     if status == "error":
         progress = min(progress, 96)
         stage = "任务失败"
-    if status == "running" and job.get("started_at"):
-        stage = job.get("stage") or stage
-
     log_tail = ""
     log_path = Path(job.get("process_log", ""))
     if log_path.exists():
@@ -220,10 +258,26 @@ def build_job_command(job: Dict[str, Any]) -> list[str]:
         cmd.extend(["--model", job["model"]])
     if job.get("base_url"):
         cmd.extend(["--base-url", job["base_url"]])
+    if job.get("api_url"):
+        cmd.extend(["--api-url", job["api_url"]])
     if job.get("api_style"):
         cmd.extend(["--api-style", job["api_style"]])
     if job.get("api_key_env"):
         cmd.extend(["--api-key-env", job["api_key_env"]])
+    if job.get("vision_model"):
+        cmd.extend(["--vision-model", job["vision_model"]])
+    if job.get("vision_base_url"):
+        cmd.extend(["--vision-base-url", job["vision_base_url"]])
+    if job.get("vision_api_url"):
+        cmd.extend(["--vision-api-url", job["vision_api_url"]])
+    if job.get("vision_api_style"):
+        cmd.extend(["--vision-api-style", job["vision_api_style"]])
+    if job.get("vision_api_key_env"):
+        cmd.extend(["--vision-api-key-env", job["vision_api_key_env"]])
+    if job.get("vision_json_mode"):
+        cmd.extend(["--vision-json-mode", job["vision_json_mode"]])
+    if job.get("prefer_vision_over_text") is False:
+        cmd.append("--no-prefer-vision-over-text")
     if job.get("no_render"):
         cmd.append("--no-render")
     if job.get("dry_run"):
@@ -261,10 +315,16 @@ def start_generation_job(fields: Dict[str, Any]) -> Dict[str, Any]:
         input_mode = "auto"
     json_mode = fields.get("jsonMode") or "json_object"
     if json_mode not in {"schema", "json_object", "none"}:
-        json_mode = "schema"
+        json_mode = "json_object"
     api_style = fields.get("apiStyle") or ""
     if api_style and api_style not in {"chat", "responses"}:
         api_style = ""
+    vision_api_style = fields.get("visionApiStyle") or ""
+    if vision_api_style and vision_api_style not in {"chat", "responses"}:
+        vision_api_style = ""
+    vision_json_mode = fields.get("visionJsonMode") or ""
+    if vision_json_mode and vision_json_mode not in {"schema", "json_object", "none"}:
+        vision_json_mode = ""
 
     max_repair_attempts = fields.get("maxRepairAttempts") or "2"
     if not re.fullmatch(r"\d{1,2}", str(max_repair_attempts)):
@@ -286,8 +346,16 @@ def start_generation_job(fields: Dict[str, Any]) -> Dict[str, Any]:
         "problem_text_file": str(problem_text_file) if problem_text_file else "",
         "model": (fields.get("model") or "").strip(),
         "base_url": (fields.get("baseUrl") or "").strip(),
+        "api_url": (fields.get("apiUrl") or fields.get("codeApiUrl") or "").strip(),
         "api_style": api_style,
         "api_key_env": (fields.get("apiKeyEnv") or "").strip(),
+        "vision_model": (fields.get("visionModel") or "").strip(),
+        "vision_base_url": (fields.get("visionBaseUrl") or "").strip(),
+        "vision_api_url": (fields.get("visionApiUrl") or "").strip(),
+        "vision_api_style": vision_api_style,
+        "vision_api_key_env": (fields.get("visionApiKeyEnv") or "").strip(),
+        "vision_json_mode": vision_json_mode,
+        "prefer_vision_over_text": fields.get("preferVisionOverText", "true") != "false",
         "no_render": fields.get("noRender") == "true",
         "dry_run": fields.get("dryRun") == "true",
         "return_code": None,
@@ -487,7 +555,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         write_json_response(self, job_snapshot(job_id))
 
     def serve_artifact(self, job_id: str, name: str) -> None:
-        if name not in ARTIFACT_NAMES:
+        if not is_allowed_artifact(name):
             write_json_response(self, {"error": "artifact not allowed"}, 403)
             return
         snapshot = job_snapshot(job_id)

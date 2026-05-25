@@ -74,6 +74,52 @@ SOLUTION_SCHEMA: Dict[str, Any] = {
 }
 
 
+TRANSCRIPT_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["problem_transcript", "uncertainty_notes"],
+    "properties": {
+        "problem_transcript": {
+            "type": "string",
+            "description": "题目图片的完整文字转写，保留数学公式、编号、已知条件和问题。",
+        },
+        "uncertainty_notes": {
+            "type": "string",
+            "description": "转写不确定处；若完全清楚，写“无”。",
+        },
+    },
+}
+
+
+SOLVE_ONLY_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["problem_transcript", "solution_markdown", "final_answer", "key_ideas", "render_notes"],
+    "properties": {
+        "problem_transcript": {
+            "type": "string",
+            "description": "沿用或轻微修正后的题面转写。",
+        },
+        "solution_markdown": {
+            "type": "string",
+            "description": "完整但精简的中文解题步骤，包含关键公式和最终答案。",
+        },
+        "final_answer": {
+            "type": "string",
+            "description": "最终答案；多问题按小问列出。",
+        },
+        "key_ideas": {
+            "type": "string",
+            "description": "3-6 条中文关键思路，使用短句或项目符号。",
+        },
+        "render_notes": {
+            "type": "string",
+            "description": "OCR 修正、解题不确定处、适合视频强调的重点。",
+        },
+    },
+}
+
+
 CODE_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -116,28 +162,30 @@ REPAIR_SCHEMA: Dict[str, Any] = {
 }
 
 
-SKILL_DIGEST = """
-你必须按已安装的 Manim 相关 skill 的约束工作：
+MANIM_GUIDELINES = """
+Manim 约束摘要：
+- 使用 Manim Community Edition 0.18.x；源码必须 `from manim import *`，不要使用 ManimGL/manimlib。
+- 目标类名必须是 `{scene_class}`；默认继承 `Scene`。
+- 中文只用 `Text`/`MarkupText` 并指定 `font="Noto Sans CJK SC"`；数学公式才用 `MathTex`。
+- 单屏内容少而清楚，使用 `VGroup(...).arrange(...)`、`to_edge`、`next_to`、`align_to` 控制布局。
+- 公式拆短，避免文字重叠；必要时用颜色区分变量、关键不等式和最终答案。
+- 不依赖外部网络、外部字体文件、外部素材；若展示题图，只能引用同目录的 `{image_filename}`。
+""".strip()
 
-manim-composer 要求：
-- 先规划分镜，再写代码；要有清晰叙事钩子、逐步揭示、视觉连续性和关键 aha moment。
-- scenes_markdown 必须说明每幕的 Duration、Purpose、Visual Elements、Content、Narration Notes、Technical Notes。
-- 视频应先提出问题，再用代数和图形直观推进，最后收束到结论。
 
-manimce-best-practices 要求：
-- 使用 Manim Community Edition，不要使用 ManimGL；源码必须 `from manim import *`。
-- 场景类继承 `Scene`、`MovingCameraScene` 或 `ThreeDScene`；默认用 `Scene`。
-- 使用 `VGroup(...).arrange(...)`、`to_edge`、`next_to`、`align_to` 保证布局，不要让文字重叠。
-- 中文必须用 `Text`/`MarkupText` 并指定 `font="Noto Sans CJK SC"`；不要把中文放进 `MathTex`。
-- 数学公式使用 `MathTex`，并保持公式短小；复杂推导拆成多行，不要堆满画面。
-- 代码必须兼容 ManimCE 0.18.x；不要依赖外部素材，除非使用同目录下的输入图片文件。
+TRANSCRIPT_SYSTEM_PROMPT = """
+你是一名严谨的数学题 OCR 转写员。你只负责从图片或旁路文本中整理题面，
+不解题、不写讲稿、不规划视频、不生成代码。
+
+输出必须是 JSON，字段必须符合调用方给出的 schema，不要输出 Markdown 代码围栏。
+JSON 字符串中的换行和反斜杠必须合法转义。
 """.strip()
 
 
 SOLUTION_SYSTEM_PROMPT = """
-你是一名严谨的数学老师、中文视频讲稿作者和 Manim Community Edition 动画工程师。
-你的任务是从题目图片中识别数学问题，给出准确解法，写出可讲授的中文讲稿，
-并按 Manim 视频要求规划分镜。不要生成 Manim Python 源码，源码会由另一个模型生成。
+你是一名严谨的数学老师。
+你的任务是根据已经转写好的题面，只给出准确的数学解法、最终答案和关键思路。
+不要写视频讲稿，不要规划分镜，不要生成 Manim Python 源码。
 
 输出必须是 JSON，字段必须符合调用方给出的 schema，不要输出 Markdown 代码围栏。
 JSON 字符串中的换行和反斜杠必须合法转义；例如 LaTeX `\\sin` 在 JSON 字符串中要写成 `\\\\sin`。
@@ -154,35 +202,49 @@ JSON 字符串中的换行和反斜杠必须合法转义；例如 LaTeX `\\sin` 
 """.strip()
 
 
-SOLUTION_PROMPT_TEMPLATE = """
-请根据题目信息完成一次端到端生成。
+TRANSCRIPT_PROMPT_TEMPLATE = """
+请只完成题面转写。
 
 目标语言：{language}
-目标 Manim 场景类名：{scene_class}
 输入图片文件名：{image_filename}
 输入方式：{input_mode_note}
 
 {problem_text_block}
 
-必须完成：
-1. 识别或整理题目，写入 problem_transcript。若有看不清的符号，明确写出不确定点。
-2. 给出严谨的中文解题步骤 solution_markdown。不要只给答案，要说明关键等价变形和理由。
-3. 写出可口播的中文 lecture_script。讲稿要自然，有镜头节奏，不要像代码注释。
-4. 按 skill 写出 scenes_markdown：逐幕规划、视觉元素、讲解点、技术实现注意事项。
-5. 不要写 Manim Python 源码；代码会由 DeepSeek 在下一阶段生成。
+要求：
+1. problem_transcript：完整转写题目，保留题号、分值、每一小问、数学符号和区间。
+2. uncertainty_notes：列出看不清或可能误读的位置；若无，写“无”。
+3. 不要解题，不要补充题目没有出现的条件。
+""".strip()
 
-分镜要为后续 Manim 实现做好准备：
-- 每幕内容不要过满，要能在 16:9 视频中清楚展示。
-- 中文屏幕文字用自然短句；数学公式单独列出。
-- 明确哪些公式、图形、颜色编码、转场和强调动画要出现。
-- 如果建议展示原题图，只能引用同目录的 `{image_filename}`。
 
-{skill_digest}
+SOLUTION_PROMPT_TEMPLATE = """
+请根据题面转写只完成数学解题。不要读取图片，不要写讲稿，不要规划分镜，不要生成 Manim Python 源码。
+
+目标语言：{language}
+
+题面转写：
+```text
+{problem_transcript}
+```
+
+转写备注：
+```text
+{uncertainty_notes}
+```
+
+输出要求：
+1. problem_transcript：沿用上面的题面转写；如果你修正明显 OCR 错误，请在 render_notes 说明。
+2. solution_markdown：给出完整、严谨、可检查的中文解答；每小问保留关键公式和关键理由，尽量控制在 1800 个中文字符以内。
+3. final_answer：把最终答案单独列出；多小问逐条写。
+4. key_ideas：写 3-6 条关键思路，短句即可。
+5. render_notes：只写 OCR 修正、解题不确定处、适合视频强调的重点。
 """.strip()
 
 
 CODE_PROMPT_TEMPLATE = """
-请根据上一阶段已经完成的数学内容，生成完整可渲染的 ManimCE Python 源码。
+请根据上一阶段已经完成的数学内容，生成短版、完整可渲染的 ManimCE Python 源码。
+优先保证能跑通，做 3-4 个清晰镜头即可，不要实现长篇完整视频。
 
 目标语言：{language}
 目标 Manim 场景类名：{scene_class}
@@ -214,20 +276,13 @@ CODE_PROMPT_TEMPLATE = """
 ```
 
 Manim 代码硬性要求：
-- 必须 `from manim import *`，不得使用 `manimlib`。
-- 必须定义类 `{scene_class}`；类名必须和 scene_class 字段一致。
-- 画布 16:9，建议 1920x1080、30fps，深色背景。
-- 中文文本使用 `Text(..., font="Noto Sans CJK SC")` 或封装 helper；数学公式才用 `MathTex`。
-- 绝对不要把中文写进 `MathTex` 或 LaTeX 字符串。
-- 每一屏内容要少而清晰。使用 `VGroup`、`arrange`、`to_edge`、`next_to` 控制布局，避免重叠。
-- 对关键变量、等式、图形使用颜色编码，保持视觉连续性。
-- 可以使用 `ImageMobject("{image_filename}")` 展示原题图片，但不是必须；如果使用，只能引用这个文件名。
-- 不要依赖联网下载、外部字体文件、外部图片或音频。
-- 不要使用过时或非 ManimCE 0.18 兼容 API。
-- 源码中可以有简短英文注释，但屏幕文字和讲稿以中文为主。
+- 生成 3-4 个清晰镜头即可，目标 60-90 秒，不要把 lecture_script 逐字铺满画面。
+- 屏幕上只保留讲解所需的短句和关键公式；长段解说留给讲稿，不要上屏。
+- 只实现主线：题目/目标、第一问关键计算、第二/三问核心不等式、最终答案。
+- 代码中可以写简短英文注释；屏幕文字以中文为主。
 - 不要生成旁白音频；只生成可视化动画视频。
 
-{skill_digest}
+{manim_guidelines}
 """.strip()
 
 
@@ -516,9 +571,8 @@ def json_mode_payload(json_mode: str, schema_name: str, schema: Dict[str, Any], 
     return {"response_format": {"type": "json_object"}}
 
 
-def build_solution_prompt(
+def build_transcript_prompt(
     language: str,
-    scene_class: str,
     image_filename: str,
     problem_text: Optional[str],
     send_image: bool,
@@ -527,7 +581,7 @@ def build_solution_prompt(
         input_mode_note = "通过 API 图片输入识别题目。"
         if problem_text:
             problem_text_block = (
-                "旁路题面文本（仅作参考，必须以图片识别为准；如图片与文本不一致，请在 problem_transcript 中说明）：\n"
+                "旁路题面文本（仅作参考，必须以图片识别为准；如图片与文本不一致，请在 uncertainty_notes 中说明）：\n"
                 "```text\n" + problem_text.strip() + "\n```"
             )
         else:
@@ -538,13 +592,28 @@ def build_solution_prompt(
     else:
         input_mode_note = "文本模型模式，但尚未提供题面文本。"
         problem_text_block = "题面文本：未提供。"
+    return TRANSCRIPT_PROMPT_TEMPLATE.format(
+        language=language,
+        image_filename=image_filename,
+        input_mode_note=input_mode_note,
+        problem_text_block=problem_text_block,
+    )
+
+
+def build_solution_prompt(
+    language: str,
+    scene_class: str,
+    image_filename: str,
+    problem_transcript: str,
+    uncertainty_notes: str,
+) -> str:
     return SOLUTION_PROMPT_TEMPLATE.format(
         language=language,
         scene_class=scene_class,
         image_filename=image_filename,
-        input_mode_note=input_mode_note,
-        problem_text_block=problem_text_block,
-        skill_digest=SKILL_DIGEST,
+        problem_transcript=problem_transcript.strip(),
+        uncertainty_notes=(uncertainty_notes or "无").strip(),
+        manim_guidelines=MANIM_GUIDELINES.format(scene_class=scene_class, image_filename=image_filename),
     )
 
 
@@ -689,6 +758,119 @@ def write_text(path: Path, text: str) -> None:
 
 def write_json(path: Path, data: Dict[str, Any]) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def clean_markdown_line(line: str) -> str:
+    cleaned = line.strip()
+    cleaned = re.sub(r"^#{1,6}\s*", "", cleaned)
+    cleaned = cleaned.strip("-*` \t")
+    cleaned = cleaned.replace("\\(", "").replace("\\)", "")
+    cleaned = cleaned.replace("\\[", "").replace("\\]", "")
+    cleaned = cleaned.replace("\\boxed", "boxed")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned
+
+
+def select_display_lines(text: str, max_lines: int, max_chars: int = 58) -> List[str]:
+    lines: List[str] = []
+    for raw_line in str(text or "").splitlines():
+        cleaned = clean_markdown_line(raw_line)
+        if not cleaned:
+            continue
+        if len(cleaned) > max_chars:
+            cleaned = cleaned[: max_chars - 1].rstrip() + "..."
+        lines.append(cleaned)
+        if len(lines) >= max_lines:
+            break
+    return lines
+
+
+def select_tail_lines(text: str, max_lines: int, max_chars: int = 58) -> List[str]:
+    candidates = [clean_markdown_line(line) for line in str(text or "").splitlines()]
+    candidates = [line for line in candidates if line]
+    lines = candidates[-max_lines:]
+    return [(line[: max_chars - 1].rstrip() + "...") if len(line) > max_chars else line for line in lines]
+
+
+def template_manim_code(scene_class: str, solution: Dict[str, Any]) -> str:
+    scene_class = sanitize_scene_class(scene_class)
+    problem_lines = select_display_lines(solution.get("problem_transcript", ""), 5)
+    solution_lines = select_display_lines(solution.get("solution_markdown", ""), 6)
+    scene_lines = select_display_lines(solution.get("scenes_markdown", ""), 5)
+    conclusion_lines = select_tail_lines(solution.get("solution_markdown", ""), 5)
+    if not problem_lines:
+        problem_lines = ["题目已转写，进入解题讲解。"]
+    if not solution_lines:
+        solution_lines = ["模型已生成解题稿，模板场景展示关键步骤。"]
+    if not scene_lines:
+        scene_lines = ["按题目、解题主线、关键推导、结论四幕讲解。"]
+    if not conclusion_lines:
+        conclusion_lines = ["最终结论见解题稿。"]
+
+    slides = [
+        ("题目转写", problem_lines),
+        ("解题主线", solution_lines),
+        ("视频讲解结构", scene_lines),
+        ("最终结论", conclusion_lines),
+    ]
+    slides_literal = json.dumps(slides, ensure_ascii=False, indent=8)
+
+    return f'''from manim import *
+
+
+class {scene_class}(Scene):
+    def construct(self):
+        self.camera.background_color = "#101216"
+        slides = {slides_literal}
+
+        def make_text(value, size=31, color=WHITE):
+            mob = Text(str(value), font="Noto Sans CJK SC", font_size=size, color=color)
+            if mob.width > 12.2:
+                mob.scale_to_fit_width(12.2)
+            return mob
+
+        title = make_text("Manim Teach 自动讲解", size=42, color=YELLOW)
+        subtitle = make_text("模型解题完成，当前为模板兜底版视频", size=26, color=GRAY_B)
+        header = VGroup(title, subtitle).arrange(DOWN, buff=0.18).to_edge(UP, buff=0.35)
+        self.play(FadeIn(header, shift=DOWN * 0.2))
+        self.wait(0.8)
+        self.play(FadeOut(header, shift=UP * 0.2))
+
+        for index, (slide_title, lines) in enumerate(slides, start=1):
+            title_mob = make_text(f"{{index}}. {{slide_title}}", size=40, color=YELLOW).to_edge(UP, buff=0.45)
+            rows = VGroup(*[make_text(line, size=29) for line in lines])
+            rows.arrange(DOWN, aligned_edge=LEFT, buff=0.24)
+            if rows.height > 5.7:
+                rows.scale_to_fit_height(5.7)
+            rows.next_to(title_mob, DOWN, buff=0.55)
+            rows.to_edge(LEFT, buff=0.85)
+            panel = RoundedRectangle(
+                width=13.0,
+                height=max(3.0, rows.height + 0.9),
+                corner_radius=0.12,
+                stroke_color=BLUE_E,
+                fill_color="#151a22",
+                fill_opacity=0.86,
+            ).move_to(rows.get_center())
+            self.play(FadeIn(title_mob, shift=DOWN * 0.15), FadeIn(panel))
+            self.play(LaggedStart(*[FadeIn(row, shift=UP * 0.08) for row in rows], lag_ratio=0.08))
+            self.wait(1.5 if index < len(slides) else 2.2)
+            self.play(FadeOut(VGroup(title_mob, rows, panel), shift=UP * 0.12))
+
+        end_title = make_text("讲解生成完成", size=46, color=YELLOW)
+        end_note = make_text("如需更精细动画，可重新调用代码模型修饰此模板", size=28, color=GRAY_B)
+        end_group = VGroup(end_title, end_note).arrange(DOWN, buff=0.25)
+        self.play(FadeIn(end_group, scale=0.96))
+        self.wait(1.5)
+'''
+
+
+def template_code_result(scene_class: str, solution: Dict[str, Any], reason: str) -> Dict[str, Any]:
+    return {
+        "scene_class": sanitize_scene_class(scene_class),
+        "manim_code": template_manim_code(scene_class, solution),
+        "render_notes": "代码模型调用失败，已使用内置模板生成短版 Manim 场景。失败原因：" + reason,
+    }
 
 
 def merge_solution_and_code(solution: Dict[str, Any], code_result: Dict[str, Any], scene_class: str) -> Dict[str, Any]:
@@ -845,19 +1027,124 @@ def truncated_tail(text: str, limit: int = 12000) -> str:
     return text[-limit:]
 
 
-def call_model_for_solution(args: argparse.Namespace, image_data_url: Optional[str], image_filename: str, scene_class: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    prompt = build_solution_prompt(args.language, scene_class, image_filename, args.problem_text_content, bool(image_data_url))
+def clipped_prompt_text(value: Any, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    head_limit = max(1, limit // 2)
+    tail_limit = max(1, limit - head_limit)
+    return text[:head_limit].rstrip() + "\n\n...[中间内容已截断，保留首尾要点]...\n\n" + text[-tail_limit:].lstrip()
+
+
+def build_code_prompt(args: argparse.Namespace, image_filename: str, scene_class: str, solution: Dict[str, Any]) -> str:
+    return CODE_PROMPT_TEMPLATE.format(
+        language=args.language,
+        scene_class=scene_class,
+        image_filename=image_filename,
+        problem_transcript=clipped_prompt_text(solution.get("problem_transcript", ""), 1200),
+        solution_markdown=clipped_prompt_text(solution.get("solution_markdown", ""), 2600),
+        lecture_script=clipped_prompt_text(solution.get("lecture_script", ""), 900),
+        scenes_markdown=clipped_prompt_text(solution.get("scenes_markdown", ""), 1800),
+        solution_notes=clipped_prompt_text(solution.get("render_notes", ""), 800),
+        manim_guidelines=MANIM_GUIDELINES.format(scene_class=scene_class, image_filename=image_filename),
+    )
+
+
+def build_lecture_script_from_solution(solve_result: Dict[str, Any]) -> str:
+    key_ideas = str(solve_result.get("key_ideas", "")).strip() or "按题目顺序拆解条件、推出关键关系、最后代入得到结论。"
+    final_answer = str(solve_result.get("final_answer", "")).strip() or "见最终答案。"
+    return (
+        "开场：先把题目的目标拆开，说明每一问要证明或计算什么。\n\n"
+        "主体讲解：按照解题稿的顺序推进。画面中一次只展示一个关键公式或一个关键不等式，"
+        "每完成一步就用颜色标出它对下一步的作用。\n\n"
+        "关键思路：\n"
+        f"{key_ideas}\n\n"
+        "收束：最后把各小问结论集中到同一屏，强调下界、构造或最大值比较等核心闭环。\n"
+        f"最终答案：{final_answer}"
+    )
+
+
+def build_scenes_from_solution(
+    solve_result: Dict[str, Any],
+    scene_class: str,
+    image_filename: str,
+) -> str:
+    final_answer = str(solve_result.get("final_answer", "")).strip() or "见解题稿最终结论。"
+    key_ideas = str(solve_result.get("key_ideas", "")).strip() or "提取题目结构，逐步展示关键推导，最后合并结论。"
+    return f"""# Manim 分镜规划：{scene_class}
+
+## Scene 1：题面与路线
+Purpose：展示题目和本题的解题路线。
+Visual：标题、原题图片 `{image_filename}` 的缩略图、按小问排列的任务列表。
+Narration：说明先识别目标，再抓关键变形，最后收束答案。
+Technical：题图可选展示；中文使用 Text，公式使用 MathTex，画面不要堆满。
+
+## Scene 2：关键思路提取
+Purpose：把解题中的主要方法先亮出来。
+Visual：用 3-5 条短句列出关键思路，并用高亮色标记核心公式或核心变量。
+Narration：围绕这些思路解释为什么这样切入。
+Technical：将长句拆成多行 Text；关键数学表达单独用 MathTex。
+
+关键思路：
+{key_ideas}
+
+## Scene 3：核心推导
+Purpose：按解题稿推进主要计算或证明。
+Visual：逐行显示关键公式，上一行淡化，当前行高亮。
+Narration：解释每一步等价变形、估计或构造的理由。
+Technical：每屏最多 3 行公式；使用 VGroup.arrange(DOWN) 控制间距。
+
+## Scene 4：答案汇总
+Purpose：把各小问结论合并，并突出最终答案。
+Visual：左侧列出小问标签，右侧显示对应结论；最终答案用 SurroundingRectangle 框出。
+Narration：回顾证明闭环，说明答案为什么已经达到最优或满足题意。
+Technical：最终答案：
+{final_answer}
+
+## Scene 5：方法总结
+Purpose：总结可迁移的方法。
+Visual：三步流程：识别结构 -> 推出关键关系 -> 检验/构造答案。
+Narration：强调本题最关键的一步，以及类似题的处理方式。
+Technical：使用简单箭头连接，最后淡出到答案屏。
+""".strip()
+
+
+def expand_solution_package(
+    transcript: Dict[str, Any],
+    solve_result: Dict[str, Any],
+    scene_class: str,
+    image_filename: str,
+) -> Dict[str, Any]:
+    problem_transcript = str(solve_result.get("problem_transcript") or transcript.get("problem_transcript") or "").strip()
+    solve_result = dict(solve_result)
+    solve_result["problem_transcript"] = problem_transcript
+    render_notes = str(solve_result.get("render_notes", "")).strip()
+    render_notes = (
+        (render_notes + "\n\n" if render_notes else "")
+        + "后端说明：为避免 gpt-5.5 代理在长输出上超时，讲稿和分镜由后端根据解题稿自动整理。"
+    )
+    return {
+        "problem_transcript": problem_transcript,
+        "solution_markdown": str(solve_result.get("solution_markdown", "")).strip(),
+        "lecture_script": build_lecture_script_from_solution(solve_result),
+        "scenes_markdown": build_scenes_from_solution(solve_result, scene_class, image_filename),
+        "render_notes": render_notes,
+    }
+
+
+def call_model_for_transcript(args: argparse.Namespace, image_data_url: Optional[str], image_filename: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    prompt = build_transcript_prompt(args.language, image_filename, args.problem_text_content, bool(image_data_url))
     payload = build_payload(
         args.vision_api_style,
         args.vision_model,
-        SOLUTION_SYSTEM_PROMPT,
+        TRANSCRIPT_SYSTEM_PROMPT,
         prompt,
         image_data_url,
-        args.vision_max_tokens,
+        args.ocr_max_tokens,
         args.vision_temperature,
         args.vision_json_mode,
-        "math_solution_generation",
-        SOLUTION_SCHEMA,
+        "math_problem_transcript",
+        TRANSCRIPT_SCHEMA,
     )
     response = post_json(
         api_endpoint(args.vision_base_url, args.vision_api_style, args.vision_api_url),
@@ -867,24 +1154,49 @@ def call_model_for_solution(args: argparse.Namespace, image_data_url: Optional[s
     )
     text = extract_response_text(response)
     try:
-        solution = parse_json_text(text)
+        transcript = parse_json_text(text)
     except Exception as exc:
         raise ModelOutputParseError(str(exc), text, response) from exc
+    return transcript, response
+
+
+def call_model_for_solution(args: argparse.Namespace, image_filename: str, scene_class: str, transcript: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    prompt = build_solution_prompt(
+        args.language,
+        scene_class,
+        image_filename,
+        str(transcript.get("problem_transcript", "")),
+        str(transcript.get("uncertainty_notes", "")),
+    )
+    payload = build_payload(
+        args.vision_api_style,
+        args.vision_model,
+        SOLUTION_SYSTEM_PROMPT,
+        prompt,
+        None,
+        args.vision_max_tokens,
+        args.vision_temperature,
+        "none",
+        "math_solution_generation",
+        SOLVE_ONLY_SCHEMA,
+    )
+    response = post_json(
+        api_endpoint(args.vision_base_url, args.vision_api_style, args.vision_api_url),
+        resolve_api_key(args.vision_api_key_env),
+        payload,
+        args.api_timeout,
+    )
+    text = extract_response_text(response)
+    try:
+        solve_result = parse_json_text(text)
+    except Exception as exc:
+        raise ModelOutputParseError(str(exc), text, response) from exc
+    solution = expand_solution_package(transcript, solve_result, scene_class, image_filename)
     return solution, response
 
 
 def call_model_for_code(args: argparse.Namespace, image_filename: str, scene_class: str, solution: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    prompt = CODE_PROMPT_TEMPLATE.format(
-        language=args.language,
-        scene_class=scene_class,
-        image_filename=image_filename,
-        problem_transcript=str(solution.get("problem_transcript", "")),
-        solution_markdown=str(solution.get("solution_markdown", "")),
-        lecture_script=str(solution.get("lecture_script", "")),
-        scenes_markdown=str(solution.get("scenes_markdown", "")),
-        solution_notes=str(solution.get("render_notes", "")),
-        skill_digest=SKILL_DIGEST,
-    )
+    prompt = build_code_prompt(args, image_filename, scene_class, solution)
     payload = build_payload(
         args.api_style,
         args.model,
@@ -1011,21 +1323,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-style", choices=["chat", "responses"], default=os.environ.get("CODE_MODEL_API_STYLE", os.environ.get("MODEL_API_STYLE", DEFAULT_API_STYLE)), help="代码模型 API 风格")
     parser.add_argument("--api-key-env", default=os.environ.get("CODE_MODEL_API_KEY_ENV", os.environ.get("MODEL_API_KEY_ENV", DEFAULT_API_KEY_ENV)), help="读取代码模型 API key 的环境变量名")
     parser.add_argument("--json-mode", choices=["schema", "json_object", "none"], default=os.environ.get("CODE_MODEL_JSON_MODE", os.environ.get("MODEL_JSON_MODE", DEFAULT_JSON_MODE)), help="代码模型结构化输出模式")
-    parser.add_argument("--vision-model", default=os.environ.get("VISION_MODEL_NAME", DEFAULT_VISION_MODEL), help="读图/解题模型名称")
-    parser.add_argument("--vision-base-url", default=os.environ.get("VISION_MODEL_API_BASE_URL", DEFAULT_VISION_BASE_URL), help="读图/解题模型 API base URL")
-    parser.add_argument("--vision-api-url", default=os.environ.get("VISION_MODEL_API_URL"), help="读图/解题模型完整 API URL；设置后覆盖 --vision-base-url")
-    parser.add_argument("--vision-api-style", choices=["chat", "responses"], default=os.environ.get("VISION_MODEL_API_STYLE", DEFAULT_VISION_API_STYLE), help="读图/解题模型 API 风格")
-    parser.add_argument("--vision-api-key-env", default=os.environ.get("VISION_MODEL_API_KEY_ENV", DEFAULT_VISION_API_KEY_ENV), help="读取读图/解题模型 API key 的环境变量名")
-    parser.add_argument("--vision-json-mode", choices=["schema", "json_object", "none"], default=os.environ.get("VISION_MODEL_JSON_MODE", DEFAULT_VISION_JSON_MODE), help="读图/解题模型结构化输出模式")
+    parser.add_argument("--vision-model", default=os.environ.get("VISION_MODEL_NAME", DEFAULT_VISION_MODEL), help="转写/解题模型名称")
+    parser.add_argument("--vision-base-url", default=os.environ.get("VISION_MODEL_API_BASE_URL", DEFAULT_VISION_BASE_URL), help="转写/解题模型 API base URL")
+    parser.add_argument("--vision-api-url", default=os.environ.get("VISION_MODEL_API_URL"), help="转写/解题模型完整 API URL；设置后覆盖 --vision-base-url")
+    parser.add_argument("--vision-api-style", choices=["chat", "responses"], default=os.environ.get("VISION_MODEL_API_STYLE", DEFAULT_VISION_API_STYLE), help="转写/解题模型 API 风格")
+    parser.add_argument("--vision-api-key-env", default=os.environ.get("VISION_MODEL_API_KEY_ENV", DEFAULT_VISION_API_KEY_ENV), help="读取转写/解题模型 API key 的环境变量名")
+    parser.add_argument("--vision-json-mode", choices=["schema", "json_object", "none"], default=os.environ.get("VISION_MODEL_JSON_MODE", DEFAULT_VISION_JSON_MODE), help="转写/解题模型结构化输出模式")
     parser.add_argument("--input-mode", choices=["auto", "image", "text"], default=os.environ.get("VISION_INPUT_MODE", os.environ.get("MODEL_INPUT_MODE", "auto")), help="读图输入模式；auto 优先用支持图片的 GPT-5.5")
-    parser.add_argument("--prefer-vision-over-text", action="store_true", default=os.environ.get("PREFER_VISION_OVER_TEXT", "1") not in {"0", "false", "False"}, help="即使存在 sidecar 文本，也优先让视觉模型读图")
+    parser.add_argument("--prefer-vision-over-text", dest="prefer_vision_over_text", action="store_true", default=os.environ.get("PREFER_VISION_OVER_TEXT", "1") not in {"0", "false", "False"}, help="即使存在 sidecar 文本，也优先让视觉模型读图")
+    parser.add_argument("--no-prefer-vision-over-text", dest="prefer_vision_over_text", action="store_false", help="存在题面文本时优先使用文本，不发送图片给读图模型")
     parser.add_argument("--problem-text", help="直接传入题面文本；设置 --input-mode text 时使用")
     parser.add_argument("--problem-text-file", help="题面文本文件路径；设置 --input-mode text 时使用")
-    parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("CODE_MODEL_MAX_TOKENS", "12000")), help="代码生成最大输出 token")
-    parser.add_argument("--vision-max-tokens", type=int, default=int(os.environ.get("VISION_MODEL_MAX_TOKENS", "9000")), help="读图/解题最大输出 token")
+    parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("CODE_MODEL_MAX_TOKENS", "6500")), help="代码生成最大输出 token")
+    parser.add_argument("--ocr-max-tokens", type=int, default=int(os.environ.get("VISION_MODEL_OCR_MAX_TOKENS", "2000")), help="读图转写最大输出 token")
+    parser.add_argument("--vision-max-tokens", type=int, default=int(os.environ.get("VISION_MODEL_MAX_TOKENS", "3000")), help="解题最大输出 token")
     parser.add_argument("--repair-max-tokens", type=int, default=int(os.environ.get("CODE_MODEL_REPAIR_MAX_TOKENS", "9000")), help="修复轮最大输出 token")
     parser.add_argument("--temperature", type=float, default=float(os.environ.get("CODE_MODEL_TEMPERATURE", "0.2")), help="代码模型采样温度")
-    parser.add_argument("--vision-temperature", type=float, default=float(os.environ.get("VISION_MODEL_TEMPERATURE", "0.2")), help="读图/解题模型采样温度")
+    parser.add_argument("--vision-temperature", type=float, default=float(os.environ.get("VISION_MODEL_TEMPERATURE", "0.2")), help="转写/解题模型采样温度")
     parser.add_argument("--api-timeout", type=int, default=300, help="API 请求超时秒数")
     parser.add_argument("--scene-class", default=DEFAULT_SCENE_CLASS, help="希望模型生成的 Manim 场景类名")
     parser.add_argument("--language", default="中文，简体中文讲解", help="解题、讲稿和屏幕文字语言")
@@ -1063,10 +1377,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     image_filename = copy_input_image(image_path, out_dir)
     send_image = should_send_image(args, problem_text)
-    solution_prompt = build_solution_prompt(args.language, scene_class, image_filename, problem_text, send_image)
+    transcript_prompt = build_transcript_prompt(args.language, image_filename, problem_text, send_image)
 
-    write_text(out_dir / "prompt.md", solution_prompt + "\n")
-    write_text(out_dir / "solution_prompt.md", solution_prompt + "\n")
+    write_text(out_dir / "prompt.md", transcript_prompt + "\n")
+    write_text(out_dir / "transcript_prompt.md", transcript_prompt + "\n")
     write_json(
         out_dir / "run_config.json",
         {
@@ -1078,6 +1392,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "vision_api_style": args.vision_api_style,
             "vision_api_key_env": args.vision_api_key_env,
             "vision_json_mode": args.vision_json_mode,
+            "ocr_max_tokens": args.ocr_max_tokens,
+            "solution_max_tokens": args.vision_max_tokens,
             "code_model": args.model,
             "code_base_url": args.base_url,
             "code_api_url": args.api_url,
@@ -1097,22 +1413,30 @@ def main(argv: Optional[List[str]] = None) -> int:
         },
     )
 
-    eprint(f"[1/4] Output dir: {out_dir}")
-    eprint(f"[1/4] Copied image: {out_dir / image_filename}")
+    eprint(f"[1/5] Output dir: {out_dir}")
+    eprint(f"[1/5] Copied image: {out_dir / image_filename}")
     if problem_text_source:
-        eprint(f"[1/4] Problem text source: {problem_text_source}")
+        eprint(f"[1/5] Problem text source: {problem_text_source}")
     elif text_only_endpoint(args.vision_base_url, args.vision_api_style) and not send_image:
         eprint("The selected vision/solution endpoint does not accept image_url messages.")
         eprint("Provide --problem-text, --problem-text-file, or an image sidecar .txt/.md file.")
         if not args.dry_run:
             return 2
     if args.dry_run:
+        solution_prompt_preview = build_solution_prompt(
+            args.language,
+            scene_class,
+            image_filename,
+            "<由读图转写阶段生成>",
+            "<由读图转写阶段生成>",
+        )
+        write_text(out_dir / "solution_prompt.md", solution_prompt_preview + "\n")
         preview_solution = {
-            "problem_transcript": "<由读图/解题模型生成>",
-            "solution_markdown": "<由读图/解题模型生成>",
-            "lecture_script": "<由读图/解题模型生成>",
-            "scenes_markdown": "<由读图/解题模型生成>",
-            "render_notes": "<由读图/解题模型生成>",
+            "problem_transcript": "<由读图转写阶段生成>",
+            "solution_markdown": "<由解题模型生成>",
+            "lecture_script": "<由解题模型生成>",
+            "scenes_markdown": "<由解题模型生成>",
+            "render_notes": "<由解题模型生成>",
         }
         code_prompt_preview = CODE_PROMPT_TEMPLATE.format(
             language=args.language,
@@ -1123,16 +1447,54 @@ def main(argv: Optional[List[str]] = None) -> int:
             lecture_script=preview_solution["lecture_script"],
             scenes_markdown=preview_solution["scenes_markdown"],
             solution_notes=preview_solution["render_notes"],
-            skill_digest=SKILL_DIGEST,
+            manim_guidelines=MANIM_GUIDELINES.format(scene_class=scene_class, image_filename=image_filename),
         )
         write_text(out_dir / "code_prompt_preview.md", code_prompt_preview + "\n")
         eprint("[dry-run] Wrote prompts and run_config.json; API calls skipped.")
         return 0
 
     image_data_url = encode_image_data_url(out_dir / image_filename) if send_image else None
-    eprint(f"[2/4] Calling vision/solution API ({args.vision_api_style}) with model: {args.vision_model}")
+    if send_image:
+        eprint(f"[2/5] Calling transcript API ({args.vision_api_style}) with model: {args.vision_model}")
+        try:
+            transcript, transcript_raw_response = call_model_for_transcript(args, image_data_url, image_filename)
+        except ModelOutputParseError as exc:
+            write_json(out_dir / "transcript_model_response.json", exc.response)
+            write_text(out_dir / "transcript_raw_model_output.txt", exc.output_text)
+            write_text(out_dir / "transcript_api_error.txt", str(exc) + "\n")
+            eprint(f"Transcript API returned unparsable JSON. See {out_dir / 'transcript_raw_model_output.txt'}")
+            eprint(str(exc))
+            return 1
+        except Exception as exc:
+            write_text(out_dir / "transcript_api_error.txt", str(exc) + "\n")
+            eprint(f"Transcript API failed. See {out_dir / 'transcript_api_error.txt'}")
+            eprint(str(exc))
+            return 1
+
+        write_json(out_dir / "transcript_model_response.json", transcript_raw_response)
+        write_json(out_dir / "transcript_generation.json", transcript)
+    else:
+        transcript = {
+            "problem_transcript": (problem_text or "").strip(),
+            "uncertainty_notes": "使用题面文本，未调用图片转写。",
+        }
+        write_json(out_dir / "transcript_generation.json", transcript)
+        write_json(out_dir / "transcript_model_response.json", {"skipped": True, "reason": "text input mode"})
+        eprint("[2/5] Using provided problem text; transcript API skipped.")
+
+    write_text(out_dir / "problem_transcript.md", str(transcript.get("problem_transcript", "")).strip() + "\n")
+    solution_prompt = build_solution_prompt(
+        args.language,
+        scene_class,
+        image_filename,
+        str(transcript.get("problem_transcript", "")),
+        str(transcript.get("uncertainty_notes", "")),
+    )
+    write_text(out_dir / "solution_prompt.md", solution_prompt + "\n")
+
+    eprint(f"[3/5] Calling solution API ({args.vision_api_style}) with model: {args.vision_model}")
     try:
-        solution, solution_raw_response = call_model_for_solution(args, image_data_url, image_filename, scene_class)
+        solution, solution_raw_response = call_model_for_solution(args, image_filename, scene_class, transcript)
     except ModelOutputParseError as exc:
         write_json(out_dir / "solution_model_response.json", exc.response)
         write_text(out_dir / "solution_raw_model_output.txt", exc.output_text)
@@ -1153,20 +1515,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     write_text(out_dir / "lecture_script.md", str(solution.get("lecture_script", "")).strip() + "\n")
     write_text(out_dir / "scenes.md", str(solution.get("scenes_markdown", "")).strip() + "\n")
 
-    code_prompt = CODE_PROMPT_TEMPLATE.format(
-        language=args.language,
-        scene_class=scene_class,
-        image_filename=image_filename,
-        problem_transcript=str(solution.get("problem_transcript", "")),
-        solution_markdown=str(solution.get("solution_markdown", "")),
-        lecture_script=str(solution.get("lecture_script", "")),
-        scenes_markdown=str(solution.get("scenes_markdown", "")),
-        solution_notes=str(solution.get("render_notes", "")),
-        skill_digest=SKILL_DIGEST,
-    )
+    code_prompt = build_code_prompt(args, image_filename, scene_class, solution)
     write_text(out_dir / "code_prompt.md", code_prompt + "\n")
 
-    eprint(f"[3/4] Calling code API ({args.api_style}) with model: {args.model}")
+    eprint(f"[4/5] Calling code API ({args.api_style}) with model: {args.model}")
     try:
         code_result, code_raw_response = call_model_for_code(args, image_filename, scene_class, solution)
     except ModelOutputParseError as exc:
@@ -1174,18 +1526,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         write_text(out_dir / "code_raw_model_output.txt", exc.output_text)
         write_text(out_dir / "code_api_error.txt", str(exc) + "\n")
         eprint(f"Code API returned unparsable JSON. See {out_dir / 'code_raw_model_output.txt'}")
-        eprint(str(exc))
-        return 1
+        eprint(f"Using template Manim fallback: {exc}")
+        code_result = template_code_result(scene_class, solution, str(exc))
+        code_raw_response = {"fallback": True, "error": str(exc), "response": exc.response}
     except Exception as exc:
         write_text(out_dir / "code_api_error.txt", str(exc) + "\n")
         eprint(f"Code API failed. See {out_dir / 'code_api_error.txt'}")
-        eprint(str(exc))
-        return 1
+        eprint(f"Using template Manim fallback: {exc}")
+        code_result = template_code_result(scene_class, solution, str(exc))
+        code_raw_response = {"fallback": True, "error": str(exc)}
 
     write_json(out_dir / "code_model_response.json", code_raw_response)
     write_json(out_dir / "code_generation.json", code_result)
     generation = merge_solution_and_code(solution, code_result, scene_class)
-    write_json(out_dir / "model_response.json", {"solution_model": solution_raw_response, "code_model": code_raw_response})
+    write_json(
+        out_dir / "model_response.json",
+        {
+            "transcript_model": transcript_raw_response if send_image else {"skipped": True, "reason": "text input mode"},
+            "solution_model": solution_raw_response,
+            "code_model": code_raw_response,
+        },
+    )
     code_path, generated_scene_class = write_generation_artifacts(out_dir, generation)
     render_scene = choose_render_scene(code_path, generated_scene_class)
     warnings = validate_code(code_path, render_scene)
@@ -1194,12 +1555,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         for warning in warnings:
             eprint(f"[warning] {warning}")
 
-    eprint(f"[3/4] Wrote artifacts: {code_path}")
+    eprint(f"[4/5] Wrote artifacts: {code_path}")
     if args.no_render:
         eprint("[no-render] Generation complete; render skipped.")
         return 0
 
-    eprint(f"[4/4] Rendering Manim scene: {render_scene}")
+    eprint(f"[5/5] Rendering Manim scene: {render_scene}")
     ok, log_path, render_log = render_manim(
         out_dir,
         code_path,
