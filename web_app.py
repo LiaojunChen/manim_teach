@@ -38,6 +38,7 @@ ARTIFACT_NAMES = {
     "transcript_model_response.json",
     "transcript_raw_model_output.txt",
     "transcript_api_error.txt",
+    "transcript_retry_note.txt",
     "solution_prompt.md",
     "code_prompt_preview.md",
     "solution_generation.json",

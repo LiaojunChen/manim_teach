@@ -1132,8 +1132,14 @@ def expand_solution_package(
     }
 
 
-def call_model_for_transcript(args: argparse.Namespace, image_data_url: Optional[str], image_filename: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def call_model_for_transcript(
+    args: argparse.Namespace,
+    image_data_url: Optional[str],
+    image_filename: str,
+    json_mode_override: Optional[str] = None,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     prompt = build_transcript_prompt(args.language, image_filename, args.problem_text_content, bool(image_data_url))
+    json_mode = json_mode_override or args.vision_json_mode
     payload = build_payload(
         args.vision_api_style,
         args.vision_model,
@@ -1142,7 +1148,7 @@ def call_model_for_transcript(args: argparse.Namespace, image_data_url: Optional
         image_data_url,
         args.ocr_max_tokens,
         args.vision_temperature,
-        args.vision_json_mode,
+        json_mode,
         "math_problem_transcript",
         TRANSCRIPT_SCHEMA,
     )
@@ -1459,17 +1465,53 @@ def main(argv: Optional[List[str]] = None) -> int:
         try:
             transcript, transcript_raw_response = call_model_for_transcript(args, image_data_url, image_filename)
         except ModelOutputParseError as exc:
-            write_json(out_dir / "transcript_model_response.json", exc.response)
-            write_text(out_dir / "transcript_raw_model_output.txt", exc.output_text)
-            write_text(out_dir / "transcript_api_error.txt", str(exc) + "\n")
-            eprint(f"Transcript API returned unparsable JSON. See {out_dir / 'transcript_raw_model_output.txt'}")
-            eprint(str(exc))
-            return 1
+            if args.vision_json_mode != "none":
+                write_text(out_dir / "transcript_retry_note.txt", f"First transcript attempt failed: {exc}\nRetrying with json_mode=none.\n")
+                eprint("[2/5] Transcript API returned invalid JSON; retrying without response_format.")
+                try:
+                    transcript, transcript_raw_response = call_model_for_transcript(args, image_data_url, image_filename, "none")
+                except ModelOutputParseError as retry_exc:
+                    write_json(out_dir / "transcript_model_response.json", retry_exc.response)
+                    write_text(out_dir / "transcript_raw_model_output.txt", retry_exc.output_text)
+                    write_text(out_dir / "transcript_api_error.txt", str(retry_exc) + "\n")
+                    eprint(f"Transcript API returned unparsable JSON. See {out_dir / 'transcript_raw_model_output.txt'}")
+                    eprint(str(retry_exc))
+                    return 1
+                except Exception as retry_exc:
+                    write_text(out_dir / "transcript_api_error.txt", str(retry_exc) + "\n")
+                    eprint(f"Transcript API failed. See {out_dir / 'transcript_api_error.txt'}")
+                    eprint(str(retry_exc))
+                    return 1
+            else:
+                write_json(out_dir / "transcript_model_response.json", exc.response)
+                write_text(out_dir / "transcript_raw_model_output.txt", exc.output_text)
+                write_text(out_dir / "transcript_api_error.txt", str(exc) + "\n")
+                eprint(f"Transcript API returned unparsable JSON. See {out_dir / 'transcript_raw_model_output.txt'}")
+                eprint(str(exc))
+                return 1
         except Exception as exc:
-            write_text(out_dir / "transcript_api_error.txt", str(exc) + "\n")
-            eprint(f"Transcript API failed. See {out_dir / 'transcript_api_error.txt'}")
-            eprint(str(exc))
-            return 1
+            if args.vision_json_mode != "none":
+                write_text(out_dir / "transcript_retry_note.txt", f"First transcript attempt failed: {exc}\nRetrying with json_mode=none.\n")
+                eprint("[2/5] Transcript API failed; retrying without response_format.")
+                try:
+                    transcript, transcript_raw_response = call_model_for_transcript(args, image_data_url, image_filename, "none")
+                except ModelOutputParseError as retry_exc:
+                    write_json(out_dir / "transcript_model_response.json", retry_exc.response)
+                    write_text(out_dir / "transcript_raw_model_output.txt", retry_exc.output_text)
+                    write_text(out_dir / "transcript_api_error.txt", str(retry_exc) + "\n")
+                    eprint(f"Transcript API returned unparsable JSON. See {out_dir / 'transcript_raw_model_output.txt'}")
+                    eprint(str(retry_exc))
+                    return 1
+                except Exception as retry_exc:
+                    write_text(out_dir / "transcript_api_error.txt", str(retry_exc) + "\n")
+                    eprint(f"Transcript API failed. See {out_dir / 'transcript_api_error.txt'}")
+                    eprint(str(retry_exc))
+                    return 1
+            else:
+                write_text(out_dir / "transcript_api_error.txt", str(exc) + "\n")
+                eprint(f"Transcript API failed. See {out_dir / 'transcript_api_error.txt'}")
+                eprint(str(exc))
+                return 1
 
         write_json(out_dir / "transcript_model_response.json", transcript_raw_response)
         write_json(out_dir / "transcript_generation.json", transcript)
